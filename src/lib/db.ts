@@ -1,10 +1,11 @@
 import { neon } from '@neondatabase/serverless';
 
 if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not defined.');
+  console.warn('WARNING: DATABASE_URL environment variable is not defined. Using dummy URL for build step.');
 }
 
-export const sql = neon(process.env.DATABASE_URL);
+// Fallback to a dummy URL during build if undefined so next build doesn't crash
+export const sql = neon(process.env.DATABASE_URL || 'postgresql://dummy:dummy@dummy/dummy');
 
 // Helper to initialize tables
 export async function initializeDatabase() {
