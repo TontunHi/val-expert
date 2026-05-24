@@ -202,6 +202,49 @@ export async function deleteUser(id: number): Promise<boolean> {
   }
 }
 
+// Update user with roles and agents (Full edit)
+export async function updateUserWithData(
+  userId: number,
+  name: string,
+  roles: ParsedRoleRank[],
+  agents: ParsedAgentRank[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Update user name
+    await sql`UPDATE users SET name = ${name} WHERE id = ${userId}`;
+    
+    // 2. Delete old role masteries
+    await sql`DELETE FROM role_mastery WHERE user_id = ${userId}`;
+
+    // 3. Delete old agent masteries
+    await sql`DELETE FROM agent_mastery WHERE user_id = ${userId}`;
+
+    // 4. Insert new role mastery
+    for (const r of roles) {
+      await sql`
+        INSERT INTO role_mastery (user_id, role_name, rank) 
+        VALUES (${userId}, ${r.roleName}, ${r.rank})
+      `;
+    }
+
+    // 5. Insert new agent mastery
+    for (const a of agents) {
+      await sql`
+        INSERT INTO agent_mastery (user_id, agent_name, role_name, rank) 
+        VALUES (${userId}, ${a.agentName}, ${a.roleName}, ${a.rank})
+      `;
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error(`Error updating user ${userId} with data:`, error);
+    if (error.message && error.message.includes('unique constraint')) {
+      return { success: false, error: 'มีผู้ใช้งานชื่อนี้อยู่ในระบบแล้ว (User with this name already exists)' };
+    }
+    return { success: false, error: String(error) };
+  }
+}
+
 // Update user name
 export async function updateUsername(id: number, newName: string): Promise<boolean> {
   try {

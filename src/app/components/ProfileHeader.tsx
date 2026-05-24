@@ -211,11 +211,18 @@ export default function ProfileHeader({
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <a href="/" className="btn btn-secondary">
             ย้อนกลับ
           </a>
-          <form action={deleteAction}>
+          <a href={`/users/${user.id}/edit`} className="btn btn-primary">
+            แก้ไขข้อมูลความชำนาญ
+          </a>
+          <form action={deleteAction} onSubmit={(e) => {
+            if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบผู้เล่นคนนี้?')) {
+              e.preventDefault();
+            }
+          }}>
             <button type="submit" className="btn btn-danger">
               ลบผู้เล่น
             </button>
