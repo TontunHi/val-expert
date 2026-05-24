@@ -336,6 +336,138 @@ export async function getAllPlayersWithRankings(): Promise<PlayerWithRankings[]>
   }
 }
 
+export interface PlayerMapStat {
+  user_id: number;
+  agent_name: string;
+  map_name: string;
+  wins: number;
+  total: number;
+}
+
+export interface MatchPlayerInput {
+  user_id: number;
+  team: string;
+  agent_name: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  combat_score: number;
+  is_mvp: boolean;
+}
+
+// Fetch all player-agent-map win rate stats in bulk
+export async function getAllPlayersMapStats(): Promise<PlayerMapStat[]> {
+  try {
+    const rows = await sql`
+      SELECT 
+        mp.user_id,
+        mp.agent_name,
+        m.map_name,
+        COUNT(CASE WHEN mp.team = m.winner_team THEN 1 END)::int as wins,
+        COUNT(*)::int as total
+      FROM match_players mp
+      JOIN matches m ON mp.match_id = m.id
+      GROUP BY mp.user_id, mp.agent_name, m.map_name
+    `;
+    return rows as PlayerMapStat[];
+  } catch (error) {
+    console.error('Error fetching player map stats:', error);
+    return [];
+  }
+}
+
+// Check if a match with specific external ID already exists in DB
+export async function checkMatchExists(externalMatchId: string): Promise<boolean> {
+  try {
+    const rows = await sql`SELECT id FROM matches WHERE external_match_id = ${externalMatchId}`;
+    return rows.length > 0;
+  } catch (error) {
+    console.error('Error checking match existence:', error);
+    return false;
+  }
+}
+
+// Add a match with players stats (supports externalMatchId and playedAt)
+export async function addMatchWithPlayers(
+  mapName: string,
+  winnerTeam: string,
+  players: MatchPlayerInput[],
+  externalMatchId?: string,
+  playedAt?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Insert match
+    const matchResult = await sql`
+      INSERT INTO matches (map_name, winner_team, external_match_id, played_at)
+      VALUES (${mapName}, ${winnerTeam}, ${externalMatchId || null}, ${playedAt || new Date().toISOString()})
+      RETURNING id
+    `;
+    if (matchResult.length === 0) {
+      throw new Error('Failed to create match record.');
+    }
+    const matchId = matchResult[0].id;
+
+    // Insert all match players
+    for (const p of players) {
+      await sql`
+        INSERT INTO match_players (match_id, user_id, team, agent_name, kills, deaths, assists, combat_score, is_mvp)
+        VALUES (${matchId}, ${p.user_id}, ${p.team}, ${p.agent_name}, ${p.kills}, ${p.deaths}, ${p.assists}, ${p.combat_score}, ${p.is_mvp})
+      `;
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error recording match with players:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export interface UserMatch {
+  match_id: number;
+  map_name: string;
+  winner_team: string;
+  played_at: string;
+  agent_name: string;
+  team: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  combat_score: number;
+  is_mvp: boolean;
+  has_won: boolean;
+}
+
+// Fetch match history for a specific user (only real synced matches)
+export async function getUserMatches(userId: number): Promise<UserMatch[]> {
+  try {
+    const rows = await sql`
+      SELECT 
+        m.id as match_id,
+        m.map_name,
+        m.winner_team,
+        m.played_at::text,
+        mp.agent_name,
+        mp.team,
+        mp.kills,
+        mp.deaths,
+        mp.assists,
+        mp.combat_score,
+        mp.is_mvp,
+        (mp.team = m.winner_team) as has_won
+      FROM match_players mp
+      JOIN matches m ON mp.match_id = m.id
+      WHERE mp.user_id = ${userId}
+        AND m.external_match_id IS NOT NULL
+      ORDER BY m.played_at DESC, m.id DESC
+    `;
+    return rows as UserMatch[];
+  } catch (error) {
+    console.error(`Error fetching matches for user ${userId}:`, error);
+    return [];
+  }
+}
+
+
 
 
 

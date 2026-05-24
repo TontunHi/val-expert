@@ -15,7 +15,7 @@ let cachedAgents: any[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 1000 * 60 * 60; // 1 hour cache
 
-async function fetchPlayableAgents(): Promise<any[]> {
+export async function fetchPlayableAgents(): Promise<any[]> {
   const now = Date.now();
   const localCache = cachedAgents;
   if (localCache && (now - cacheTimestamp < CACHE_DURATION)) {

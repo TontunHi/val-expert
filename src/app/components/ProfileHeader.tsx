@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useTransition } from 'react';
-import { updateUsernameAction } from '../actions';
+import { updateUsernameAction, syncMatchHistoryAction } from '../actions';
 
 interface User {
   id: number;
@@ -33,6 +33,20 @@ export default function ProfileHeader({
   const [tempName, setTempName] = useState(user.name);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isSyncPending, startSyncTransition] = useTransition();
+
+  const handleSyncStats = () => {
+    setError(null);
+    startSyncTransition(async () => {
+      const result = await syncMatchHistoryAction(user.id);
+      if (result.success) {
+        alert(result.message || 'ซิงค์ข้อมูลสำเร็จ!');
+        window.location.reload();
+      } else {
+        alert(result.error || 'เกิดข้อผิดพลาดในการดึงข้อมูลแมตช์');
+      }
+    });
+  };
 
   const handleEditStart = () => {
     setTempName(name);
@@ -143,8 +157,7 @@ export default function ProfileHeader({
                       fontWeight: 'bold', 
                       padding: '4px 12px',
                       maxWidth: '300px',
-                      backgroundColor: 'rgba(0,0,0,0.5)',
-                      textTransform: 'uppercase'
+                      backgroundColor: 'rgba(0,0,0,0.5)'
                     }}
                     autoFocus
                     required
@@ -215,6 +228,20 @@ export default function ProfileHeader({
           <a href="/" className="btn btn-secondary">
             ย้อนกลับ
           </a>
+          <button
+            type="button"
+            className="btn"
+            onClick={handleSyncStats}
+            disabled={isSyncPending}
+            style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              color: '#34d399',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              boxShadow: isSyncPending ? 'none' : '0 0 10px rgba(16, 185, 129, 0.15)'
+            }}
+          >
+            {isSyncPending ? '⏳ กำลังซิงค์ข้อมูล...' : '🔄 ซิงค์ประวัติการเล่นจริง'}
+          </button>
           <a href={`/users/${user.id}/edit`} className="btn btn-primary">
             แก้ไขข้อมูลความชำนาญ
           </a>

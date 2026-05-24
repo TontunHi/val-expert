@@ -342,18 +342,21 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
         <div className="card" style={{ marginBottom: '24px' }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label" htmlFor="name-input">
-              ชื่อผู้เล่น (Username)
+              ชื่อผู้เล่น Riot ID (Name#Tag)
             </label>
             <input
               id="name-input"
               type="text"
               className="form-input"
-              placeholder="ตัวอย่าง: Somsak ProPlayer"
+              placeholder="ตัวอย่าง: Apotoxin#ComeB"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isPending}
               required
             />
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginTop: '6px' }}>
+              * กรุณาใส่เครื่องหมาย # คั่นกลาง เช่น <strong>Apotoxin#ComeB</strong> เพื่อรองรับการซิงค์ประวัติการเล่นจริง
+            </span>
           </div>
         </div>
 
