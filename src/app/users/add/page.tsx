@@ -32,6 +32,7 @@ const initialAgentsList: AgentState[] = [
   { name: 'Raze', role: 'Duelists', rank: 5 },
   { name: 'Yoru', role: 'Duelists', rank: 6 },
   { name: 'Neon', role: 'Duelists', rank: 7 },
+  { name: 'Waylay', role: 'Duelists', rank: 8 },
   // Sentinels
   { name: 'Chamber', role: 'Sentinels', rank: 1 },
   { name: 'Killjoy', role: 'Sentinels', rank: 2 },
@@ -39,6 +40,7 @@ const initialAgentsList: AgentState[] = [
   { name: 'Vyse', role: 'Sentinels', rank: 4 },
   { name: 'Sage', role: 'Sentinels', rank: 5 },
   { name: 'Deadlock', role: 'Sentinels', rank: 6 },
+  { name: 'Veto', role: 'Sentinels', rank: 7 },
   // Initiators
   { name: 'Sova', role: 'Initiators', rank: 1 },
   { name: 'Fade', role: 'Initiators', rank: 2 },
@@ -46,13 +48,15 @@ const initialAgentsList: AgentState[] = [
   { name: 'Gekko', role: 'Initiators', rank: 4 },
   { name: 'Skye', role: 'Initiators', rank: 5 },
   { name: 'Breach', role: 'Initiators', rank: 6 },
+  { name: 'Tejo', role: 'Initiators', rank: 7 },
   // Controllers
   { name: 'Clove', role: 'Controllers', rank: 1 },
   { name: 'Viper', role: 'Controllers', rank: 2 },
   { name: 'Omen', role: 'Controllers', rank: 3 },
   { name: 'Brimstone', role: 'Controllers', rank: 4 },
   { name: 'Harbor', role: 'Controllers', rank: 5 },
-  { name: 'Astra', role: 'Controllers', rank: 6 }
+  { name: 'Astra', role: 'Controllers', rank: 6 },
+  { name: 'Miks', role: 'Controllers', rank: 7 }
 ];
 
 export default function AddUserPage() {
