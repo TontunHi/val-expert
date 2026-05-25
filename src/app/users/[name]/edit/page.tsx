@@ -1,26 +1,24 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getUserById, getUserRoleRanks, getUserAgentRanks } from '@/lib/db-queries';
+import { getUserByName, getUserRoleRanks, getUserAgentRanks } from '@/lib/db-queries';
 import EditUserClient from '@/app/components/EditUserClient';
 
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ name: string }>;
 }
 
 export const revalidate = 0; // Fresh data on each load
 
 export default async function EditUserPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const userId = parseInt(resolvedParams.id, 10);
+  const decodedName = decodeURIComponent(resolvedParams.name);
 
-  if (isNaN(userId)) {
-    notFound();
-  }
-
-  const user = await getUserById(userId);
+  const user = await getUserByName(decodedName);
   if (!user) {
     notFound();
   }
+
+  const userId = user.id;
 
   // Fetch current rankings
   const dbRoles = await getUserRoleRanks(userId);

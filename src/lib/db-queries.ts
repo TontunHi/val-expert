@@ -60,6 +60,18 @@ export async function getUserById(id: number): Promise<User | null> {
   }
 }
 
+// Get user by Name
+export async function getUserByName(name: string): Promise<User | null> {
+  try {
+    const rows = await sql`SELECT id, name, created_at::text FROM users WHERE LOWER(name) = LOWER(${name})`;
+    if (rows.length === 0) return null;
+    return rows[0] as User;
+  } catch (error) {
+    console.error(`Error fetching user by name ${name}:`, error);
+    return null;
+  }
+}
+
 // Get user role rankings
 export async function getUserRoleRanks(userId: number): Promise<UserRoleRank[]> {
   try {
@@ -463,6 +475,205 @@ export async function getUserMatches(userId: number): Promise<UserMatch[]> {
     return rows as UserMatch[];
   } catch (error) {
     console.error(`Error fetching matches for user ${userId}:`, error);
+    return [];
+  }
+}
+
+export interface HallOfFameStats {
+  mvpKing: { user_id: number; user_name: string; mvp_count: number } | null;
+  aimGod: { user_id: number; user_name: string; kd_ratio: number; games_played: number } | null;
+  mapTacticians: { map_name: string; user_id: number; user_name: string; wins: number; total: number; win_rate: number }[];
+  feeder: { user_id: number; user_name: string; avg_deaths: number; games_played: number } | null;
+  jinx: { user_id: number; user_name: string; wins: number; total: number; win_rate: number } | null;
+  loneWolf: { user_id: number; user_name: string; avg_assists: number; games_played: number } | null;
+  lvp: { user_id: number; user_name: string; avg_combat_score: number; games_played: number } | null;
+}
+
+export async function getHallOfFameAndShame(): Promise<HallOfFameStats> {
+  try {
+    const minGames = 3;
+
+    const [mvpRows, kdRows, mapRows, feederRows, jinxRows, loneWolfRows, lvpRows] = await Promise.all([
+      // 1. MVP King
+      sql`
+        SELECT mp.user_id, u.name as user_name, COUNT(*)::int as mvp_count
+        FROM match_players mp
+        JOIN users u ON mp.user_id = u.id
+        WHERE mp.is_mvp = TRUE
+        GROUP BY mp.user_id, u.name
+        ORDER BY mvp_count DESC, u.name ASC
+        LIMIT 1
+      `,
+      // 2. Aim God (Highest K/D)
+      sql`
+        SELECT mp.user_id, u.name as user_name, SUM(mp.kills)::float / GREATEST(SUM(mp.deaths), 1)::float as kd_ratio, COUNT(*)::int as games_played
+        FROM match_players mp
+        JOIN users u ON mp.user_id = u.id
+        GROUP BY mp.user_id, u.name
+        HAVING COUNT(*) >= ${minGames}
+        ORDER BY kd_ratio DESC, u.name ASC
+        LIMIT 1
+      `,
+      // 3. Map Winrates
+      sql`
+        WITH player_map_wins AS (
+          SELECT 
+            mp.user_id,
+            u.name as user_name,
+            m.map_name,
+            COUNT(CASE WHEN mp.team = m.winner_team THEN 1 END)::float as wins,
+            COUNT(*)::float as total
+          FROM match_players mp
+          JOIN matches m ON mp.match_id = m.id
+          JOIN users u ON mp.user_id = u.id
+          GROUP BY mp.user_id, u.name, m.map_name
+        ),
+        ranked_map_players AS (
+          SELECT 
+            user_id,
+            user_name,
+            map_name,
+            wins::int,
+            total::int,
+            (wins / total) as win_rate,
+            ROW_NUMBER() OVER (PARTITION BY map_name ORDER BY (wins / total) DESC, total DESC, user_name ASC) as rn
+          FROM player_map_wins
+          WHERE total >= ${minGames}
+        )
+        SELECT user_id, user_name, map_name, wins, total, win_rate
+        FROM ranked_map_players
+        WHERE rn = 1
+        ORDER BY map_name ASC
+      `,
+      // 4. Feeder (Highest Average Deaths)
+      sql`
+        SELECT mp.user_id, u.name as user_name, AVG(mp.deaths)::float as avg_deaths, COUNT(*)::int as games_played
+        FROM match_players mp
+        JOIN users u ON mp.user_id = u.id
+        GROUP BY mp.user_id, u.name
+        HAVING COUNT(*) >= ${minGames}
+        ORDER BY avg_deaths DESC, u.name ASC
+        LIMIT 1
+      `,
+      // 5. Jinx (Lowest overall win rate)
+      sql`
+        SELECT 
+          mp.user_id,
+          u.name as user_name,
+          COUNT(CASE WHEN mp.team = m.winner_team THEN 1 END)::int as wins,
+          COUNT(*)::int as total,
+          (COUNT(CASE WHEN mp.team = m.winner_team THEN 1 END)::float / COUNT(*)::float) as win_rate
+        FROM match_players mp
+        JOIN matches m ON mp.match_id = m.id
+        JOIN users u ON mp.user_id = u.id
+        GROUP BY mp.user_id, u.name
+        HAVING COUNT(*) >= ${minGames}
+        ORDER BY win_rate ASC, total DESC, u.name ASC
+        LIMIT 1
+      `,
+      // 6. Lone Wolf (Lowest Average Assists)
+      sql`
+        SELECT mp.user_id, u.name as user_name, AVG(mp.assists)::float as avg_assists, COUNT(*)::int as games_played
+        FROM match_players mp
+        JOIN users u ON mp.user_id = u.id
+        GROUP BY mp.user_id, u.name
+        HAVING COUNT(*) >= ${minGames}
+        ORDER BY avg_assists ASC, u.name ASC
+        LIMIT 1
+      `,
+      // 7. LVP (Lowest Average Combat Score / ACS)
+      sql`
+        SELECT mp.user_id, u.name as user_name, AVG(mp.combat_score)::float as avg_combat_score, COUNT(*)::int as games_played
+        FROM match_players mp
+        JOIN users u ON mp.user_id = u.id
+        GROUP BY mp.user_id, u.name
+        HAVING COUNT(*) >= ${minGames}
+        ORDER BY avg_combat_score ASC, u.name ASC
+        LIMIT 1
+      `
+    ]);
+
+    return {
+      mvpKing: (mvpRows[0] as any) || null,
+      aimGod: (kdRows[0] as any) || null,
+      mapTacticians: (mapRows as any[]) || [],
+      feeder: (feederRows[0] as any) || null,
+      jinx: (jinxRows[0] as any) || null,
+      loneWolf: (loneWolfRows[0] as any) || null,
+      lvp: (lvpRows[0] as any) || null,
+    };
+  } catch (error) {
+    console.error('Error fetching Hall of Fame and Shame stats:', error);
+    return {
+      mvpKing: null,
+      aimGod: null,
+      mapTacticians: [],
+      feeder: null,
+      jinx: null,
+      loneWolf: null,
+      lvp: null
+    };
+  }
+}
+
+export interface RawPlayerStat {
+  user_id: number;
+  user_name: string;
+  total_games: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  total_kills: number;
+  total_deaths: number;
+  total_assists: number;
+  kd_ratio: number;
+  avg_kills: number;
+  avg_deaths: number;
+  avg_assists: number;
+  mvp_count: number;
+  avg_combat_score: number;
+}
+
+export async function getRawPlayerStatsForSheet(): Promise<RawPlayerStat[]> {
+  try {
+    const rows = await sql`
+      WITH player_match_stats AS (
+        SELECT 
+          mp.user_id,
+          COUNT(*)::int as total_games,
+          COUNT(CASE WHEN mp.team = m.winner_team THEN 1 END)::int as wins,
+          SUM(mp.kills)::int as total_kills,
+          SUM(mp.deaths)::int as total_deaths,
+          SUM(mp.assists)::int as total_assists,
+          COUNT(CASE WHEN mp.is_mvp = TRUE THEN 1 END)::int as mvp_count,
+          AVG(mp.combat_score)::float as avg_combat_score
+        FROM match_players mp
+        JOIN matches m ON mp.match_id = m.id
+        GROUP BY mp.user_id
+      )
+      SELECT 
+        u.id as user_id,
+        u.name as user_name,
+        COALESCE(pms.total_games, 0) as total_games,
+        COALESCE(pms.wins, 0) as wins,
+        (COALESCE(pms.total_games, 0) - COALESCE(pms.wins, 0)) as losses,
+        CASE WHEN COALESCE(pms.total_games, 0) > 0 THEN (COALESCE(pms.wins, 0)::float / pms.total_games::float) ELSE 0.0 END as win_rate,
+        COALESCE(pms.total_kills, 0) as total_kills,
+        COALESCE(pms.total_deaths, 0) as total_deaths,
+        COALESCE(pms.total_assists, 0) as total_assists,
+        CASE WHEN COALESCE(pms.total_deaths, 0) > 0 THEN (COALESCE(pms.total_kills, 0)::float / pms.total_deaths::float) ELSE COALESCE(pms.total_kills, 0)::float END as kd_ratio,
+        CASE WHEN COALESCE(pms.total_games, 0) > 0 THEN (COALESCE(pms.total_kills, 0)::float / pms.total_games::float) ELSE 0.0 END as avg_kills,
+        CASE WHEN COALESCE(pms.total_games, 0) > 0 THEN (COALESCE(pms.total_deaths, 0)::float / pms.total_games::float) ELSE 0.0 END as avg_deaths,
+        CASE WHEN COALESCE(pms.total_games, 0) > 0 THEN (COALESCE(pms.total_assists, 0)::float / pms.total_games::float) ELSE 0.0 END as avg_assists,
+        COALESCE(pms.mvp_count, 0) as mvp_count,
+        COALESCE(pms.avg_combat_score, 0.0) as avg_combat_score
+      FROM users u
+      LEFT JOIN player_match_stats pms ON u.id = pms.user_id
+      ORDER BY total_games DESC, u.name ASC
+    `;
+    return rows as RawPlayerStat[];
+  } catch (error) {
+    console.error('Error fetching raw player stats for sheet:', error);
     return [];
   }
 }

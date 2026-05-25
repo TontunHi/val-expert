@@ -817,3 +817,27 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Match History Card Enhancements */
+.match-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, border-left-width 0.2s ease, box-shadow 0.3s ease !important;
+}
+
+.match-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.03) !important;
+  border-left-width: 8px !important;
+}
+
+.match-card:hover .match-card-map-bg {
+  transform: scale(1.06);
+  opacity: 0.20 !important;
+}
+
+.datasheet-tr-row {
+  transition: background-color 0.2s ease;
+}
+
+.datasheet-tr-row:hover {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}

@@ -109,3 +109,31 @@ export async function getAgentInfo(name: string, roleName: string): Promise<Agen
     isCustom: true
   };
 }
+
+let cachedMaps: any[] | null = null;
+let mapsCacheTimestamp = 0;
+
+export async function fetchPlayableMaps(): Promise<any[]> {
+  const now = Date.now();
+  const localCache = cachedMaps;
+  if (localCache && (now - mapsCacheTimestamp < 1000 * 60 * 60)) {
+    return localCache;
+  }
+
+  try {
+    const res = await fetch('https://valorant-api.com/v1/maps', {
+      next: { revalidate: 3600 }
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch maps: ${res.status}`);
+    }
+    const data = await res.json();
+    const mapsList = data.data || [];
+    cachedMaps = mapsList;
+    mapsCacheTimestamp = now;
+    return mapsList;
+  } catch (error) {
+    console.error('Error fetching maps from Valorant API:', error);
+    return cachedMaps || [];
+  }
+}

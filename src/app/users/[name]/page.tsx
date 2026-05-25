@@ -1,34 +1,34 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getUserById, getUserRoleRanks, getUserAgentRanks, getUserMatches } from '@/lib/db-queries';
-import { getAgentInfo, fetchPlayableAgents } from '@/lib/agents-service';
+import { getUserByName, getUserRoleRanks, getUserAgentRanks, getUserMatches } from '@/lib/db-queries';
+import { getAgentInfo, fetchPlayableAgents, fetchPlayableMaps } from '@/lib/agents-service';
 import { deleteUserAction } from '../../actions';
 import ProfileHeader from '@/app/components/ProfileHeader';
 
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ name: string }>;
 }
 
 export default async function UserDetailPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const userId = parseInt(resolvedParams.id, 10);
+  const decodedName = decodeURIComponent(resolvedParams.name);
 
-  if (isNaN(userId)) {
-    notFound();
-  }
-
-  // Fetch user, rankings, matches, and playable agents in parallel
-  const [user, roleRanks, agentRanks, matches, playableAgents] = await Promise.all([
-    getUserById(userId),
-    getUserRoleRanks(userId),
-    getUserAgentRanks(userId),
-    getUserMatches(userId),
-    fetchPlayableAgents()
-  ]);
-
+  // Fetch the user by name first
+  const user = await getUserByName(decodedName);
   if (!user) {
     notFound();
   }
+
+  const userId = user.id;
+
+  // Fetch rankings, matches, playable agents, and maps in parallel using the resolved ID
+  const [roleRanks, agentRanks, matches, playableAgents, playableMaps] = await Promise.all([
+    getUserRoleRanks(userId),
+    getUserAgentRanks(userId),
+    getUserMatches(userId),
+    fetchPlayableAgents(),
+    fetchPlayableMaps()
+  ]);
 
   // Fetch agent assets from Valorant API in parallel for ranked agents
   const agentRanksWithAssets = await Promise.all(
@@ -193,10 +193,16 @@ export default async function UserDetailPage({ params }: PageProps) {
               timeZone: 'Asia/Bangkok'
             });
 
+            // Find map asset for background
+            const mapAsset = playableMaps.find(
+              (m: any) => m.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === match.map_name.toLowerCase().replace(/[^a-z0-9]/g, '')
+            );
+            const mapBgImage = mapAsset?.listViewIcon || mapAsset?.splash || null;
+
             return (
               <div 
                 key={match.match_id} 
-                className="card"
+                className="card match-card"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -205,13 +211,35 @@ export default async function UserDetailPage({ params }: PageProps) {
                   gap: '16px',
                   padding: '16px 20px',
                   borderLeft: `5px solid ${isWin ? '#10b981' : '#ef4444'}`,
-                  background: isWin 
-                    ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.04) 0%, rgba(20, 20, 25, 0.95) 100%)'
-                    : 'linear-gradient(90deg, rgba(239, 68, 68, 0.04) 0%, rgba(20, 20, 25, 0.95) 100%)'
+                  position: 'relative',
+                  overflow: 'hidden',
+                  background: 'rgba(20, 20, 25, 0.75)',
+                  backdropFilter: 'blur(5px)',
                 }}
               >
+                {/* Background Map Image Overlay */}
+                {mapBgImage && (
+                  <div 
+                    className="match-card-map-bg"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      backgroundImage: `url(${mapBgImage})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      opacity: 0.08,
+                      transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease',
+                      pointerEvents: 'none',
+                      zIndex: 0
+                    }}
+                  />
+                )}
+
                 {/* Result, Agent Icon, Map & Date */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: '250px', flex: '1 1 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: '250px', flex: '1 1 auto', position: 'relative', zIndex: 1 }}>
                   <div 
                     style={{ 
                       fontSize: '11px', 
@@ -275,7 +303,7 @@ export default async function UserDetailPage({ params }: PageProps) {
                 </div>
 
                 {/* KDA Stats */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', minWidth: '160px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', minWidth: '160px', position: 'relative', zIndex: 1 }}>
                   <div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: '#fff', letterSpacing: '0.5px' }}>
                       {match.kills} <span style={{ color: 'gray', fontWeight: 400 }}>/</span> {match.deaths} <span style={{ color: 'gray', fontWeight: 400 }}>/</span> {match.assists}
@@ -303,7 +331,7 @@ export default async function UserDetailPage({ params }: PageProps) {
                 </div>
 
                 {/* Combat Score / ACS */}
-                <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                <div style={{ textAlign: 'right', minWidth: '100px', position: 'relative', zIndex: 1 }}>
                   <span style={{ fontSize: '10px', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
                     {match.combat_score > 1000 ? 'Score' : 'ACS'}
                   </span>

@@ -165,7 +165,7 @@ export default async function DashboardPage() {
                         {role}
                       </span>
                       <h3 style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'white', textTransform: 'uppercase' }}>
-                        {leader ? leader.users.map(u => u.name).join(', ') : 'ไม่มีข้อมูล'}
+                        {leader ? leader.users.map(u => u.name.split('#')[0]).join(', ') : 'ไม่มีข้อมูล'}
                       </h3>
                     </div>
 
@@ -273,10 +273,10 @@ export default async function DashboardPage() {
                                 {agent.users.map((u, idx) => (
                                   <a 
                                     key={u.id}
-                                    href={`/users/${u.id}`} 
+                                    href={`/users/${encodeURIComponent(u.name)}`} 
                                     style={{ color: 'inherit', textDecoration: 'none', fontWeight: 700 }}
                                   >
-                                    {u.name}{idx < agent.users.length - 1 ? ', ' : ''}
+                                    {u.name.split('#')[0]}{idx < agent.users.length - 1 ? ', ' : ''}
                                   </a>
                                 ))}
                                 <span className="badge-rank" style={{ marginLeft: '4px' }}>
@@ -312,7 +312,7 @@ export default async function DashboardPage() {
                     return (
                       <a 
                         key={user.id} 
-                        href={`/users/${user.id}`} 
+                        href={`/users/${encodeURIComponent(user.name)}`} 
                         className="user-list-item"
                         style={{ 
                           textDecoration: 'none', 
@@ -362,7 +362,14 @@ export default async function DashboardPage() {
                             </div>
                           )}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span style={{ fontWeight: 700, fontSize: '15px', color: 'white' }}>{user.name}</span>
+                            <span style={{ fontWeight: 700, fontSize: '15px', color: 'white' }}>
+                              {user.name.split('#')[0]}
+                              {user.name.includes('#') && (
+                                <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontWeight: 400, marginLeft: '4px' }}>
+                                  #{user.name.split('#')[1]}
+                                </span>
+                              )}
+                            </span>
                             {user.top_agent_name ? (
                               <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                                 ชำนาญสุด: <span style={{ color: borderCol, fontWeight: 600 }}>{user.top_agent_name}</span> ({user.top_role_name})

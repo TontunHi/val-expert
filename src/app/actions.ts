@@ -45,7 +45,7 @@ export async function createUserAction(formData: FormData): Promise<ActionRespon
   
   if (result.success) {
     revalidatePath('/');
-    revalidatePath(`/users/${result.userId}`);
+    revalidatePath(`/users/${encodeURIComponent(name.trim())}`);
   }
 
   return result;
@@ -66,9 +66,14 @@ export async function updateUsernameAction(userId: number, newName: string): Pro
   }
 
   try {
+    const user = await getUserById(userId);
+    const oldName = user ? user.name : '';
     await updateUsername(userId, newName.trim());
     revalidatePath('/');
-    revalidatePath(`/users/${userId}`);
+    if (oldName) {
+      revalidatePath(`/users/${encodeURIComponent(oldName)}`);
+    }
+    revalidatePath(`/users/${encodeURIComponent(newName.trim())}`);
     return { success: true };
   } catch (error: any) {
     console.error('Error updating username:', error);
@@ -113,7 +118,7 @@ export async function updateUserAction(userId: number, formData: FormData): Prom
   
   if (result.success) {
     revalidatePath('/');
-    revalidatePath(`/users/${userId}`);
+    revalidatePath(`/users/${encodeURIComponent(name.trim())}`);
   }
 
   return result;
@@ -345,7 +350,9 @@ export async function syncMatchHistoryAction(userId: number): Promise<ActionResp
 
     revalidatePath('/');
     revalidatePath('/team-builder');
-    revalidatePath(`/users/${userId}`);
+    if (user) {
+      revalidatePath(`/users/${encodeURIComponent(user.name)}`);
+    }
 
     return { 
       success: true, 

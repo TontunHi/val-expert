@@ -64,6 +64,13 @@ const ROLE_COLORS: Record<string, string> = {
   Sentinels: '#ffca28',
 };
 
+const ROLE_ICONS: Record<string, string> = {
+  Duelists: 'https://media.valorant-api.com/agents/roles/dbe8757e-9e92-4ed4-b39f-9dfc589691d4/displayicon.png',
+  Initiators: 'https://media.valorant-api.com/agents/roles/1b47567f-8f7b-444b-aae3-b0c634622d10/displayicon.png',
+  Sentinels: 'https://media.valorant-api.com/agents/roles/5fc02f99-4091-4486-a531-98459a3e95e9/displayicon.png',
+  Controllers: 'https://media.valorant-api.com/agents/roles/4ee40330-ecdd-4f2f-98a8-eb1243428373/displayicon.png'
+};
+
 // ─── Agent Picker Overlay ──────────────────────────────────────────────────────
 function AgentPickerOverlay({
   title,
@@ -566,7 +573,12 @@ function TeamResultOverlay({
                     {member.agent
                   }</div>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                    {member.player.name}
+                    {member.player.name.split('#')[0]}
+                    {member.player.name.includes('#') && (
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginLeft: '4px' }}>
+                        #{member.player.name.split('#')[1]}
+                      </span>
+                    )}
                   </div>
                   {member.mapWinrateText && (
                     <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginTop: '6px' }}>
@@ -639,7 +651,7 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
   const [selectedMap, setSelectedMap] = useState<string>('Ascent');
   const [bannedAgents, setBannedAgents] = useState<string[]>([]);
   const [requiredAgents, setRequiredAgents] = useState<string[]>([]);
-  const [generationMode, setGenerationMode] = useState<'performance' | 'random-balanced' | 'pure-random'>('performance');
+  const [generationMode, setGenerationMode] = useState<'performance' | 'meta-synergy' | 'flex-balanced' | 'pure-random'>('performance');
   const [generatedTeam, setGeneratedTeam] = useState<AssignmentResult[] | null>(null);
   const [teamScore, setTeamScore] = useState<number | null>(null);
   const [teamGrade, setTeamGrade] = useState<string>('');
@@ -674,6 +686,64 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
   }, []);
 
   const selectedMapAsset = mapAssets.find(m => m.displayName === selectedMap);
+
+  // Calculate Top Agents for Selected Map dynamically
+  const getTopAgentsForSelectedMap = () => {
+    // 1. Group/aggregate wins and total matches from mapStats for the selected map
+    const agentStatsMap: Record<string, { wins: number; total: number }> = {};
+    mapStats.forEach((s) => {
+      if (s.map_name.toLowerCase() === selectedMap.toLowerCase()) {
+        const name = s.agent_name;
+        if (!agentStatsMap[name]) {
+          agentStatsMap[name] = { wins: 0, total: 0 };
+        }
+        agentStatsMap[name].wins += s.wins;
+        agentStatsMap[name].total += s.total;
+      }
+    });
+
+    // 2. Map agents to roles and filter out those with total games < 2 (to prevent 1 game 100% win rate)
+    const list = Object.entries(agentStatsMap).map(([agentName, stats]) => {
+      const asset = agentAssets.find(
+        (a) => a.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === agentName.toLowerCase().replace(/[^a-z0-9]/g, '')
+      );
+      
+      // Map API roles to standard plurals used in our app
+      let role = 'Other';
+      if (asset?.role?.displayName) {
+        const rawRole = asset.role.displayName;
+        if (rawRole === 'Duelist') role = 'Duelists';
+        else if (rawRole === 'Initiator') role = 'Initiators';
+        else if (rawRole === 'Controller') role = 'Controllers';
+        else if (rawRole === 'Sentinel') role = 'Sentinels';
+      }
+
+      return {
+        agentName,
+        role,
+        wins: stats.wins,
+        total: stats.total,
+        winRate: stats.total > 0 ? stats.wins / stats.total : 0,
+        displayIcon: asset?.displayIcon || null
+      };
+    })
+    .filter((a) => a.role !== 'Other' && a.total >= 2); // FILTER OUT low games (min 2 matches)
+
+    // 3. Group by Role and take Top 3 sorted by winRate DESC then total DESC
+    const rolesList = ['Duelists', 'Initiators', 'Controllers', 'Sentinels'];
+    const topAgentsByRole: Record<string, typeof list> = {};
+
+    rolesList.forEach((role) => {
+      topAgentsByRole[role] = list
+        .filter((a) => a.role === role)
+        .sort((a, b) => b.winRate - a.winRate || b.total - a.total)
+        .slice(0, 3);
+    });
+
+    return topAgentsByRole;
+  };
+
+  const topMapAgents = getTopAgentsForSelectedMap();
 
   const handlePlayerCheckbox = (id: number) => {
     if (selectedPlayerIds.includes(id)) {
@@ -745,7 +815,9 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
         );
         let winrateBonus = 0;
         if (playerAgentMapStat && playerAgentMapStat.total > 0) {
-          winrateBonus = (playerAgentMapStat.wins / playerAgentMapStat.total) * 4.0;
+          // Bayesian Win Rate: (wins + 1.5) / (total + 3.0)
+          const bayesianWinrate = (playerAgentMapStat.wins + 1.5) / (playerAgentMapStat.total + 3.0);
+          winrateBonus = bayesianWinrate * 4.0;
         } else {
           const agentStatsAllMaps = mapStats.filter(s =>
             s.user_id === player.id &&
@@ -754,24 +826,45 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
           const agentTot = agentStatsAllMaps.reduce((sum, s) => sum + s.total, 0);
           const agentWins = agentStatsAllMaps.reduce((sum, s) => sum + s.wins, 0);
           if (agentTot > 0) {
-            winrateBonus = (agentWins / agentTot) * 2.5;
+            const bayesianWinrate = (agentWins + 1.5) / (agentTot + 3.0);
+            winrateBonus = bayesianWinrate * 2.5;
           } else {
             const pms = mapStats.filter(s => s.user_id === player.id && s.map_name.toLowerCase() === selectedMapName.toLowerCase());
             const tot = pms.reduce((s, x) => s + x.total, 0);
             const wins = pms.reduce((s, x) => s + x.wins, 0);
             if (tot > 0) {
-              winrateBonus = (wins / tot) * 1.5;
+              const bayesianWinrate = (wins + 1.5) / (tot + 3.0);
+              winrateBonus = bayesianWinrate * 1.5;
             } else {
               const allPlayerStats = mapStats.filter(s => s.user_id === player.id);
               const allTot = allPlayerStats.reduce((sum, s) => sum + s.total, 0);
               const allWins = allPlayerStats.reduce((sum, s) => sum + s.wins, 0);
               if (allTot > 0) {
-                winrateBonus = (allWins / allTot) * 1.0;
+                const bayesianWinrate = (allWins + 1.5) / (allTot + 3.0);
+                winrateBonus = bayesianWinrate * 1.0;
               }
             }
           }
         }
-        const adjustedScore = rankObj.rank - winrateBonus;
+
+        // Adjust score based on generation mode
+        let modeAdjust = 0;
+        if (generationMode === 'meta-synergy') {
+          // Find if this agent is in topMapAgents for this role
+          const recommended = topMapAgents[roleName] || [];
+          const matchIndex = recommended.findIndex(
+            r => r.agentName.toLowerCase() === rankObj.agent_name.toLowerCase()
+          );
+          if (matchIndex === 0) modeAdjust = -4.0; // Top 1 recommendation bonus
+          else if (matchIndex === 1) modeAdjust = -2.5; // Top 2 recommendation bonus
+          else if (matchIndex === 2) modeAdjust = -1.5; // Top 3 recommendation bonus
+        } else if (generationMode === 'flex-balanced') {
+          // Emphasize the player's general role mastery
+          const roleRank = player.roles.find(r => r.role_name === roleName)?.rank ?? 4;
+          modeAdjust = (roleRank - 1) * 3.0; // High penalty for playing off-role
+        }
+
+        const adjustedScore = rankObj.rank - winrateBonus + modeAdjust;
         current.push({ player, agent: rankObj.agent_name, rank: rankObj.rank, adjustedScore });
         search(playerIndex + 1, current, assigned, score + (isPureRandom ? 0 : adjustedScore));
         current.pop();
@@ -892,15 +985,12 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
     let selected;
     if (generationMode === 'pure-random') {
       selected = validConfigs[Math.floor(Math.random() * validConfigs.length)];
-    } else if (generationMode === 'performance') {
+    } else {
+      // Sort configurations by totalScore ascending
       validConfigs.sort((a, b) => a.totalScore - b.totalScore);
-      // Select randomly from the top 15% or top 3 configs so re-roll works and gives a high-quality team
+      // Select randomly from the top 15% (min 1, max 5) to allow variety on re-roll
       const topCount = Math.min(5, Math.max(1, Math.ceil(validConfigs.length * 0.15)));
       const top = validConfigs.slice(0, topCount);
-      selected = top[Math.floor(Math.random() * top.length)];
-    } else { // random-balanced
-      validConfigs.sort((a, b) => a.totalScore - b.totalScore);
-      const top = validConfigs.slice(0, Math.max(1, Math.ceil(validConfigs.length * 0.2)));
       selected = top[Math.floor(Math.random() * top.length)];
     }
 
@@ -1022,7 +1112,12 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
                       style={{ cursor: 'pointer' }}
                     />
                     <span style={{ fontSize: '14px', fontWeight: 600, color: isChecked ? '#fff' : 'var(--color-text-secondary)' }}>
-                      {player.name}
+                      {player.name.split('#')[0]}
+                      {player.name.includes('#') && (
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontWeight: 400, marginLeft: '4px' }}>
+                          #{player.name.split('#')[1]}
+                        </span>
+                      )}
                     </span>
                   </label>
                 );
@@ -1037,8 +1132,15 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', textAlign: 'center' }}>
               {['Duelists', 'Initiators', 'Controllers', 'Sentinels'].map(role => (
-                <div key={role} style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '12px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: ROLE_COLORS[role], textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                <div key={role} style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '12px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: ROLE_COLORS[role], textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
+                    {ROLE_ICONS[role] && (
+                      <img 
+                        src={ROLE_ICONS[role]} 
+                        alt={role} 
+                        style={{ width: '12px', height: '12px', objectFit: 'contain' }} 
+                      />
+                    )}
                     {role}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
@@ -1095,6 +1197,69 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
                 </div>
               </div>
             </button>
+          </div>
+
+          {/* Top 3 Agents on selected map */}
+          <div style={{ marginBottom: '24px' }}>
+            <h3 className="section-title" style={{ fontSize: '16px', marginBottom: '14px' }}>
+              📊 Top 3 Agents แนะนำบนแผนที่ {selectedMap} (สถิติจริงของทีม)
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px' }}>
+              {['Duelists', 'Initiators', 'Controllers', 'Sentinels'].map((role) => {
+                const list = topMapAgents[role] || [];
+                const roleColor = ROLE_COLORS[role] || 'gray';
+                return (
+                  <div key={role} className="card" style={{ padding: '16px', borderTop: `3px solid ${roleColor}`, background: 'rgba(20,20,25,0.45)', margin: 0 }}>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: roleColor, textTransform: 'uppercase', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {ROLE_ICONS[role] && (
+                          <img 
+                            src={ROLE_ICONS[role]} 
+                            alt={role} 
+                            style={{ width: '14px', height: '14px', objectFit: 'contain' }} 
+                          />
+                        )}
+                        {role}
+                      </span>
+                      <span style={{ opacity: 0.5 }}>Top 3</span>
+                    </div>
+                    {list.length === 0 ? (
+                      <div style={{ fontSize: '11px', color: 'gray', fontStyle: 'italic', padding: '10px 0' }}>
+                        ไม่มีข้อมูลเอเจนต์ที่เล่น 2 เกมขึ้นไป
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {list.map((item, index) => (
+                          <div key={item.agentName} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: roleColor, width: '12px' }}>
+                              {index + 1}
+                            </span>
+                            {item.displayIcon ? (
+                              <img 
+                                src={item.displayIcon} 
+                                alt={item.agentName} 
+                                style={{ width: '24px', height: '24px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.3)' }} 
+                              />
+                            ) : (
+                              <div style={{ width: '24px', height: '24px', borderRadius: '4px', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {item.agentName.slice(0,2)}
+                              </div>
+                            )}
+                            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontWeight: 600, color: '#fff' }}>{item.agentName}</span>
+                            </div>
+                            <div style={{ textAlign: 'right', fontSize: '11px' }}>
+                              <div style={{ fontWeight: 700, color: '#34d399' }}>{Math.round(item.winRate * 100)}%</div>
+                              <div style={{ color: 'gray', fontSize: '9px' }}>{item.total} นัด</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Step 4: Ban / Required Agent Buttons */}
@@ -1207,7 +1372,14 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
                       padding: '12px 14px', backgroundColor: 'rgba(0,0,0,0.2)',
                       borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)'
                     }}>
-                      <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px', color: '#fff' }}>{player.name}</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px', color: '#fff' }}>
+                        {player.name.split('#')[0]}
+                        {player.name.includes('#') && (
+                          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontWeight: 400, marginLeft: '4px' }}>
+                            #{player.name.split('#')[1]}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
                         {/* Role buttons */}
                         {['random', 'Duelists', 'Initiators', 'Controllers', 'Sentinels'].map(role => {
@@ -1268,18 +1440,43 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>โหมดการจัดทีม:</span>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                {(['performance', 'random-balanced', 'pure-random'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setGenerationMode(mode)}
-                    className={`btn ${generationMode === mode ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '8px 4px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' }}
-                  >
-                    {mode === 'performance' ? '📊 อิงผลงานจริง' : mode === 'random-balanced' ? '🎲 สุ่มบาลานซ์' : '💥 สุ่มหมด'}
-                  </button>
-                ))}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode('performance')}
+                  className={`btn ${generationMode === 'performance' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '10px 4px', fontSize: '12px', fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+                >
+                  <span>📊 อิงผลงานจริง</span>
+                  <span style={{ fontSize: '9px', fontWeight: 400, opacity: 0.7 }}>สถิติแผนที่ & ฝีมือจริง</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode('meta-synergy')}
+                  className={`btn ${generationMode === 'meta-synergy' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '10px 4px', fontSize: '12px', fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+                >
+                  <span>🔥 เน้นเมต้าแผนที่</span>
+                  <span style={{ fontSize: '9px', fontWeight: 400, opacity: 0.7 }}>ดึงตัวแนะนำของด่าน</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode('flex-balanced')}
+                  className={`btn ${generationMode === 'flex-balanced' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '10px 4px', fontSize: '12px', fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+                >
+                  <span>🔄 สมดุลตำแหน่งถนัด</span>
+                  <span style={{ fontSize: '9px', fontWeight: 400, opacity: 0.7 }}>จัดตามบทบาทที่ถนัดที่สุด</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode('pure-random')}
+                  className={`btn ${generationMode === 'pure-random' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '10px 4px', fontSize: '12px', fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+                >
+                  <span>💥 สุ่มอิสระ</span>
+                  <span style={{ fontSize: '9px', fontWeight: 400, opacity: 0.7 }}>สุ่มจัดแบบไม่มีเงื่อนไข</span>
+                </button>
               </div>
             </div>
             <button
@@ -1313,7 +1510,16 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
                 const col = ROLE_COLORS[role];
                 return (
                   <div key={role} style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: col, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{role}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: col, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {ROLE_ICONS[role] && (
+                        <img 
+                          src={ROLE_ICONS[role]} 
+                          alt={role} 
+                          style={{ width: '12px', height: '12px', objectFit: 'contain' }} 
+                        />
+                      )}
+                      {role}
+                    </div>
                     {members.map((member, i) => (
                       <div key={i} className="card" style={{
                         marginBottom: '8px', padding: '14px 16px',
@@ -1327,7 +1533,14 @@ export default function TeamBuilderClient({ initialPlayers, mapStats }: TeamBuil
                         )}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '15px', fontWeight: 700 }}>{member.agent}</div>
-                          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{member.player.name}</div>
+                          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                            {member.player.name.split('#')[0]}
+                            {member.player.name.includes('#') && (
+                              <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginLeft: '4px' }}>
+                                #{member.player.name.split('#')[1]}
+                              </span>
+                            )}
+                          </div>
                           {member.mapWinrateText && (
                             <div style={{ fontSize: '11px', color: col, marginTop: '4px', opacity: 0.8 }}>{member.mapWinrateText}</div>
                           )}

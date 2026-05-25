@@ -36,6 +36,9 @@ export default function RootLayout({
               <a href="/team-builder" className="nav-link">
                 จัดทีมสุ่ม
               </a>
+              <a href="/hall-of-fame" className="nav-link">
+                ทำเนียบที่สุด
+              </a>
               <a href="/users/add" className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '13px' }}>
                 เพิ่มผู้เล่นใหม่
               </a>

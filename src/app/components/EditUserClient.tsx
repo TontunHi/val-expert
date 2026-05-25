@@ -38,6 +38,13 @@ interface AgentState {
   isCustom?: boolean;
 }
 
+const ROLE_ICONS: Record<string, string> = {
+  Duelists: 'https://media.valorant-api.com/agents/roles/dbe8757e-9e92-4ed4-b39f-9dfc589691d4/displayicon.png',
+  Initiators: 'https://media.valorant-api.com/agents/roles/1b47567f-8f7b-444b-aae3-b0c634622d10/displayicon.png',
+  Sentinels: 'https://media.valorant-api.com/agents/roles/5fc02f99-4091-4486-a531-98459a3e95e9/displayicon.png',
+  Controllers: 'https://media.valorant-api.com/agents/roles/4ee40330-ecdd-4f2f-98a8-eb1243428373/displayicon.png'
+};
+
 const standardAgents = [
   // Duelists
   { name: 'Reyna', role: 'Duelists' },
@@ -138,6 +145,15 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
   const [draggedAgentIndex, setDraggedAgentIndex] = useState<number | null>(null);
   const [draggedRoleIndex, setDraggedRoleIndex] = useState<number | null>(null);
 
+  const [agentAssets, setAgentAssets] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    fetch('https://valorant-api.com/v1/agents?isPlayableCharacter=true')
+      .then((res) => res.json())
+      .then((data) => setAgentAssets(data.data || []))
+      .catch((err) => console.error('Error fetching agents:', err));
+  }, []);
+
   // Generate RAW text rankings
   const generateRankingsTextFromVisual = (): string => {
     let text = '';
@@ -174,7 +190,7 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
     startTransition(async () => {
       const response = await updateUserAction(user.id, formData);
       if (response.success) {
-        router.push(`/users/${user.id}`);
+        router.push(`/users/${encodeURIComponent(name)}`);
         router.refresh();
       } else {
         setErrorMessage(response.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
@@ -392,6 +408,13 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
                       <div style={{ color: 'var(--color-text-secondary)', cursor: 'grab', display: 'flex', alignItems: 'center' }}>
                         ☰
                       </div>
+                      {ROLE_ICONS[role.name] && (
+                        <img 
+                          src={ROLE_ICONS[role.name]} 
+                          alt={role.name} 
+                          style={{ width: '20px', height: '20px', objectFit: 'contain', filter: 'brightness(0.9)' }} 
+                        />
+                      )}
                       <span style={{ fontWeight: 600, fontSize: '15px' }}>{role.name}</span>
                     </div>
                     
@@ -453,10 +476,20 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
                     fontSize: '12px',
                     borderRadius: '4px',
                     backgroundColor: activeRoleTab === role ? `var(--color-${role.toLowerCase().slice(0, -1)})` : '',
-                    borderColor: activeRoleTab === role ? `var(--color-${role.toLowerCase().slice(0, -1)})` : ''
+                    borderColor: activeRoleTab === role ? `var(--color-${role.toLowerCase().slice(0, -1)})` : '',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
                 >
-                  {role}
+                  {ROLE_ICONS[role] && (
+                    <img 
+                      src={ROLE_ICONS[role]} 
+                      alt={role} 
+                      style={{ width: '16px', height: '16px', objectFit: 'contain', filter: activeRoleTab === role ? 'brightness(1) invert(1)' : 'brightness(0.7)' }} 
+                    />
+                  )}
+                  <span>{role}</span>
                 </button>
               ))}
             </div>
@@ -501,71 +534,84 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
               {agentsState
                 .filter((a) => a.role === activeRoleTab)
                 .sort((a, b) => a.rank - b.rank)
-                .map((agent, index, filteredArray) => (
-                  <div
-                    key={agent.name}
-                    draggable
-                    onDragStart={(e) => handleAgentDragStart(e, index)}
-                    onDragOver={handleAgentDragOver}
-                    onDrop={(e) => handleAgentDrop(e, index)}
-                    className="user-list-item"
-                    style={{
-                      margin: 0,
-                      cursor: 'grab',
-                      backgroundColor: 'rgba(255,255,255,0.01)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ color: 'var(--color-text-secondary)', cursor: 'grab' }}>☰</div>
-                      <span style={{ fontSize: '14px', fontWeight: 500 }}>
-                        {agent.name} {agent.isCustom && <span style={{ fontSize: '10px', color: 'var(--color-valorant)', fontWeight: 'bold' }}>(Custom)</span>}
-                      </span>
-                    </div>
+                .map((agent, index, filteredArray) => {
+                  const asset = agentAssets.find(a =>
+                    a.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === agent.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+                  );
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <input
-                        type="number"
-                        className="form-input"
-                        value={agent.rank}
-                        onChange={(e) => handleAgentRankChange(agent.name, parseInt(e.target.value, 10))}
-                        style={{ width: '60px', padding: '4px 8px', fontSize: '13px', textAlign: 'center' }}
-                        min="1"
-                      />
-                      
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => moveAgent(activeRoleTab, index, 'up')}
-                          disabled={index === 0}
-                          style={{ padding: '4px 8px', fontSize: '10px' }}
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => moveAgent(activeRoleTab, index, 'down')}
-                          disabled={index === filteredArray.length - 1}
-                          style={{ padding: '4px 8px', fontSize: '10px' }}
-                        >
-                          ▼
-                        </button>
+                  return (
+                    <div
+                      key={agent.name}
+                      draggable
+                      onDragStart={(e) => handleAgentDragStart(e, index)}
+                      onDragOver={handleAgentDragOver}
+                      onDrop={(e) => handleAgentDrop(e, index)}
+                      className="user-list-item"
+                      style={{
+                        margin: 0,
+                        cursor: 'grab',
+                        backgroundColor: 'rgba(255,255,255,0.01)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', cursor: 'grab' }}>☰</div>
+                        {asset?.displayIcon && (
+                          <img 
+                            src={asset.displayIcon} 
+                            alt={agent.name} 
+                            style={{ width: '28px', height: '28px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.3)', objectFit: 'contain' }} 
+                          />
+                        )}
+                        <span style={{ fontSize: '14px', fontWeight: 500 }}>
+                          {agent.name} {agent.isCustom && <span style={{ fontSize: '10px', color: 'var(--color-valorant)', fontWeight: 'bold' }}>(Custom)</span>}
+                        </span>
                       </div>
 
-                      {agent.isCustom && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCustomAgent(agent.name)}
-                          className="btn btn-danger"
-                          style={{ padding: '4px 8px', fontSize: '11px', textTransform: 'none' }}
-                        >
-                          ลบ
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={agent.rank}
+                          onChange={(e) => handleAgentRankChange(agent.name, parseInt(e.target.value, 10))}
+                          style={{ width: '60px', padding: '4px 8px', fontSize: '13px', textAlign: 'center' }}
+                          min="1"
+                        />
+                        
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => moveAgent(activeRoleTab, index, 'up')}
+                            disabled={index === 0}
+                            style={{ padding: '4px 8px', fontSize: '10px' }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => moveAgent(activeRoleTab, index, 'down')}
+                            disabled={index === filteredArray.length - 1}
+                            style={{ padding: '4px 8px', fontSize: '10px' }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+
+                        {agent.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomAgent(agent.name)}
+                            className="btn btn-danger"
+                            style={{ padding: '4px 8px', fontSize: '11px', textTransform: 'none' }}
+                          >
+                            ลบ
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           </div>
         </div>
@@ -575,7 +621,7 @@ export default function EditUserClient({ user, dbRoles, dbAgents }: PageProps) {
           <button type="submit" className="btn btn-primary" disabled={isPending}>
             {isPending ? 'กำลังบันทึกข้อมูล...' : 'บันทึกการแก้ไข'}
           </button>
-          <a href={`/users/${user.id}`} className="btn btn-secondary">
+          <a href={`/users/${encodeURIComponent(user.name)}`} className="btn btn-secondary">
             ยกเลิก
           </a>
         </div>

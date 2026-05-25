@@ -77,8 +77,7 @@ export default function ProfileHeader({
     startTransition(async () => {
       const result = await updateUsernameAction(user.id, trimmed);
       if (result.success) {
-        setName(trimmed);
-        setIsEditing(false);
+        window.location.href = `/users/${encodeURIComponent(trimmed)}`;
       } else {
         setError(result.error || 'เกิดข้อผิดพลาดในการเปลี่ยนชื่อ');
       }
@@ -242,7 +241,7 @@ export default function ProfileHeader({
           >
             {isSyncPending ? '⏳ กำลังซิงค์ข้อมูล...' : '🔄 ซิงค์ประวัติการเล่นจริง'}
           </button>
-          <a href={`/users/${user.id}/edit`} className="btn btn-primary">
+          <a href={`/users/${encodeURIComponent(name)}/edit`} className="btn btn-primary">
             แก้ไขข้อมูลความชำนาญ
           </a>
           <form action={deleteAction} onSubmit={(e) => {
